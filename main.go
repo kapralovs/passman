@@ -16,6 +16,7 @@ type PassData struct {
 func main() {
 	if len(os.Args) < 4 {
 		fmt.Println("not enough arguments")
+		return
 	}
 
 	pd := PassData{
