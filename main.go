@@ -5,6 +5,7 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -46,11 +47,19 @@ func main() {
 	}
 
 	//Encrypt
-	_, err = encrypt(key, []byte(pe.Password))
+	encrypted, err := encrypt(key, []byte(pe.Password))
 	if err != nil {
 		log.Fatal(err)
 	}
 
+	fmt.Printf("Encrypted: %s\n", hex.EncodeToString(encrypted))
+
+	decrypted, err := decrypt(key, encrypted)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Printf("Decrypted: %s\n", decrypted)
 	fmt.Println("saved")
 }
 
@@ -72,7 +81,27 @@ func encrypt(key, data []byte) ([]byte, error) {
 
 	encrypter.CryptBlocks(ciphertext[aes.BlockSize:], data)
 
-	fmt.Printf("Encrypted: %s\n", hex.EncodeToString(ciphertext))
-
 	return ciphertext, nil
+}
+
+func decrypt(key, encryptedData []byte) ([]byte, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if len(encryptedData) < aes.BlockSize {
+		return nil, errors.New("encrypted text too short")
+	}
+
+	iv := encryptedData[:aes.BlockSize]
+	actualEncryptedData := encryptedData[aes.BlockSize:]
+
+	decrypter := cipher.NewCBCDecrypter(block, iv)
+
+	plaintext := make([]byte, len(actualEncryptedData))
+
+	decrypter.CryptBlocks(plaintext, actualEncryptedData)
+
+	return plaintext, nil
 }
