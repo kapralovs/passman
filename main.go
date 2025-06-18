@@ -25,17 +25,13 @@ type PasswordEntry struct {
 }
 
 func main() {
-	// if err := godotenv.Load(); err != nil {
-	// 	log.Fatal(err)
-	// }
-
 	key := make([]byte, 32)
 	_, err := io.ReadFull(rand.Reader, key)
 	if err != nil {
 		log.Fatal("create 256-bit key", err)
 	}
 
-	fmt.Println("Key:", string(key))
+	fmt.Println("Key:", hex.EncodeToString(key))
 
 	//Input
 	if len(os.Args) < 4 {
@@ -49,27 +45,11 @@ func main() {
 		Password: os.Args[3],
 	}
 
-	// key := []byte(os.Getenv("SECRET_KEY"))
-
 	//Encrypt
-	encrypted, err := encrypt(key, []byte(pe.Password))
+	_, err = encrypt(key, []byte(pe.Password))
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	fmt.Println(string(encrypted))
-
-	//Save to storage
-	// f, err := os.Create("passman_data.json")
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-	// defer f.Close()
-
-	// if err := json.NewEncoder(f).
-	// 	Encode(&pe); err != nil {
-	// 	log.Fatal(err)
-	// }
 
 	fmt.Println("saved")
 }
@@ -96,7 +76,3 @@ func encrypt(key, data []byte) ([]byte, error) {
 
 	return ciphertext, nil
 }
-
-// func decrypt(key, encryptedData []byte) ([]byte, error) {
-// 	return decrypted, nil
-// }
