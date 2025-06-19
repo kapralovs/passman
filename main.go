@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -69,17 +70,18 @@ func encrypt(key, data []byte) ([]byte, error) {
 		log.Fatal(err)
 	}
 
-	ciphertext := make([]byte, aes.BlockSize+len(data))
+	paddedData := pkcs7Pad(data, aes.BlockSize)
+
+	ciphertext := make([]byte, aes.BlockSize+len(paddedData))
 
 	iv := ciphertext[:aes.BlockSize]
-	_, err = io.ReadFull(rand.Reader, iv)
-	if err != nil {
+	if _, err = io.ReadFull(rand.Reader, iv); err != nil {
 		log.Fatal("create initialization vector", err)
 	}
 
 	encrypter := cipher.NewCBCEncrypter(block, iv)
 
-	encrypter.CryptBlocks(ciphertext[aes.BlockSize:], data)
+	encrypter.CryptBlocks(ciphertext[aes.BlockSize:], paddedData)
 
 	return ciphertext, nil
 }
@@ -103,5 +105,36 @@ func decrypt(key, encryptedData []byte) ([]byte, error) {
 
 	decrypter.CryptBlocks(plaintext, actualEncryptedData)
 
+	plaintext, err = pkcs7Unpad(actualEncryptedData)
+	if err != nil {
+		return nil, err
+	}
+
 	return plaintext, nil
+}
+
+func pkcs7Pad(data []byte, blockSize int) []byte {
+	padding := blockSize - len(data)%blockSize
+	padText := bytes.Repeat([]byte{byte(padding)}, padding)
+
+	return append(data, padText...)
+}
+
+func pkcs7Unpad(data []byte) ([]byte, error) {
+	if len(data) == 0 {
+		return nil, errors.New("empty data")
+	}
+
+	padding := int(data[len(data)-1])
+	if padding > len(data) || padding == 0 {
+		return nil, errors.New("invalid padding")
+	}
+
+	for i := len(data) - padding; i < len(data); i++ {
+		if int(data[i]) != padding {
+			return nil, errors.New("invalid padding")
+		}
+	}
+
+	return data[:len(data)-padding], nil
 }
