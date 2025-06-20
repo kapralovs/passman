@@ -105,7 +105,7 @@ func decrypt(key, encryptedData []byte) ([]byte, error) {
 
 	decrypter.CryptBlocks(plaintext, actualEncryptedData)
 
-	plaintext, err = pkcs7Unpad(actualEncryptedData)
+	plaintext, err = pkcs7Unpad(plaintext)
 	if err != nil {
 		return nil, err
 	}
