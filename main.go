@@ -5,8 +5,9 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
-	"encoding/hex"
+	"crypto/sha256"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -14,8 +15,13 @@ import (
 )
 
 type UserData struct {
-	Username  string          `json:"username"`
-	Passwords []PasswordEntry `json:"passwords"`
+	Credentials Credentials     `json:"credentials"`
+	Passwords   []PasswordEntry `json:"passwords"`
+}
+
+type Credentials struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
 }
 
 type PasswordEntry struct {
@@ -26,20 +32,25 @@ type PasswordEntry struct {
 	Description string `json:"description"`
 }
 
+const (
+	CommandLogin = "login"
+)
+
+var password = flag.String("password", "", "passman login -login=<login> -password=<password>")
+
 func main() {
-	key := make([]byte, 32)
-	_, err := io.ReadFull(rand.Reader, key)
-	if err != nil {
-		log.Fatal("create 256-bit key", err)
-	}
+	flag.Parse()
 
-	fmt.Println("Key:", hex.EncodeToString(key))
-
+	// fmt.Println("Password:", *password)
 	//Input
-	if len(os.Args) < 4 {
-		fmt.Println("not enough arguments")
-		return
+	if err := handleCommand(); err != nil {
+		log.Fatal("handle command")
 	}
+
+	// if len(os.Args) < 4 {
+	// 	fmt.Println("not enough arguments")
+	// 	return
+	// }
 
 	pe := PasswordEntry{
 		Service:  os.Args[1],
@@ -47,21 +58,48 @@ func main() {
 		Password: os.Args[3],
 	}
 
+	key := make([]byte, 32)
+	_, err := io.ReadFull(rand.Reader, key)
+	if err != nil {
+		log.Fatal("create 256-bit key", err)
+	}
+
+	// fmt.Println("Key:", hex.EncodeToString(key))
+
 	//Encrypt
 	encrypted, err := encrypt(key, []byte(pe.Password))
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	fmt.Printf("Encrypted: %s\n", hex.EncodeToString(encrypted))
+	// fmt.Printf("Encrypted: %s\n", hex.EncodeToString(encrypted))
 
-	decrypted, err := decrypt(key, encrypted)
-	if err != nil {
-		log.Fatal(err)
+	// decrypted, err := decrypt(key, encrypted)
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
+
+	// fmt.Printf("Decrypted: %s\n", decrypted)
+	fmt.Println("saved")
+}
+
+func handleCommand() error {
+	switch os.Args[1] {
+	case CommandLogin:
+		var l, p string
+
+		if login != nil {
+			l = *login
+		}
+		if password != nil {
+			p = *password
+
+			hashedPassword := sha256.New().Sum([]byte(p))
+			// fmt.Printf("%x", hashedPassword)
+		}
 	}
 
-	fmt.Printf("Decrypted: %s\n", decrypted)
-	fmt.Println("saved")
+	return nil
 }
 
 func encrypt(key, data []byte) ([]byte, error) {
