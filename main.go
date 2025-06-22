@@ -12,6 +12,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"time"
 )
 
 type UserData struct {
@@ -20,8 +21,9 @@ type UserData struct {
 }
 
 type Credentials struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
+	Username    string    `json:"username"`
+	Password    string    `json:"password"`
+	LastLoginAt time.Time `json:"last_login_at"`
 }
 
 type PasswordEntry struct {
@@ -32,11 +34,17 @@ type PasswordEntry struct {
 	Description string `json:"description"`
 }
 
+type Storage map[string]UserData
+
 const (
 	CommandLogin = "login"
 )
 
-var password = flag.String("password", "", "passman login -login=<login> -password=<password>")
+var (
+	password = flag.String("password", "", "passman login -login=<login> -password=<password>")
+	login    = flag.String("login", "", "passman login -login=<login>")
+	strg     = make(Storage)
+)
 
 func main() {
 	flag.Parse()
@@ -52,11 +60,11 @@ func main() {
 	// 	return
 	// }
 
-	pe := PasswordEntry{
-		Service:  os.Args[1],
-		Login:    os.Args[2],
-		Password: os.Args[3],
-	}
+	// pe := PasswordEntry{
+	// 	Service:  os.Args[1],
+	// 	Login:    os.Args[2],
+	// 	Password: os.Args[3],
+	// }
 
 	key := make([]byte, 32)
 	_, err := io.ReadFull(rand.Reader, key)
@@ -67,10 +75,10 @@ func main() {
 	// fmt.Println("Key:", hex.EncodeToString(key))
 
 	//Encrypt
-	encrypted, err := encrypt(key, []byte(pe.Password))
-	if err != nil {
-		log.Fatal(err)
-	}
+	// encrypted, err := encrypt(key, []byte(pe.Password))
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
 
 	// fmt.Printf("Encrypted: %s\n", hex.EncodeToString(encrypted))
 
@@ -87,6 +95,7 @@ func handleCommand() error {
 	switch os.Args[1] {
 	case CommandLogin:
 		var l, p string
+		var hashedPassword []byte
 
 		if login != nil {
 			l = *login
@@ -94,9 +103,20 @@ func handleCommand() error {
 		if password != nil {
 			p = *password
 
-			hashedPassword := sha256.New().Sum([]byte(p))
+			hashedPassword = sha256.New().Sum([]byte(p))
 			// fmt.Printf("%x", hashedPassword)
 		}
+
+		if _, ok := strg[l]; !ok {
+			return errors.New("no users found")
+		}
+		if string(hashedPassword) != strg[l].Credentials.Password {
+			return errors.New("wrong master password for user")
+		}
+
+		fmt.Println("Login succes!")
+		// case CommandAdd:
+		// case CommandGet:
 	}
 
 	return nil
