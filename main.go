@@ -92,87 +92,89 @@ func main() {
 func handleCommand() error {
 	switch os.Args[1] {
 	case CommandSignUp:
-		flagSet := flag.NewFlagSet("login", flag.ExitOnError)
-
-		username := flagSet.String("username", "", "passman login -username=<username>")
-		password := flagSet.String("password", "", "passman login -password=<password>")
-
-		flagSet.Parse(os.Args[2:])
-
-		var (
-			u, p           string
-			hashedPassword [32]byte
-		)
-
-		if username != nil {
-			if *username != "" {
-				u = *username
-			}
-		}
-
-		if password != nil {
-			if *password != "" {
-				p = *password
-
-				hashedPassword = sha256.Sum256([]byte(p))
-				fmt.Printf("%x\n", hashedPassword)
-			}
-		}
-
-		if _, ok := strg[u]; ok {
-			return errors.New("user already exists")
-		}
-		strg[u] = UserData{
-			Credentials: Credentials{
-				Username:    u,
-				Password:    fmt.Sprintf("%x", hashedPassword),
-				LastLoginAt: time.Now(),
-			},
-			Passwords: []PasswordEntry{},
-		}
-
-		fmt.Println("Sign up succes!")
+		return handleSignUp()
 	case CommandLogin:
-		flagSet := flag.NewFlagSet("login", flag.ExitOnError)
-
-		username := flagSet.String("username", "", "passman login -username=<username>")
-		password := flagSet.String("password", "", "passman login -password=<password>")
-
-		flagSet.Parse(os.Args[2:])
-
-		var (
-			u, p           string
-			hashedPassword [32]byte
-		)
-
-		if username != nil {
-			if *username != "" {
-				u = *username
-			}
-		}
-
-		if password != nil {
-			if *password != "" {
-				p = *password
-
-				hashedPassword = sha256.Sum256([]byte(p))
-				fmt.Printf("%x\n", hashedPassword)
-			}
-		}
-
-		if _, ok := strg[u]; !ok {
-			return errors.New("no users found")
-		}
-		if string(hashedPassword[:]) != strg[u].Credentials.Password {
-			return errors.New("wrong master password for user")
-		}
-
-		fmt.Println("Login succes!")
+		return handleLogin()
 		// case CommandAdd:
 		// case CommandGet:
 	}
 
 	return nil
+}
+
+func handleSignUp() error {
+	flagSet := flag.NewFlagSet("signup", flag.ExitOnError)
+
+	usernameFlag := flagSet.String("username", "", "passman login -username=<username>")
+	passwordFlag := flagSet.String("password", "", "passman login -password=<password>")
+
+	flagSet.Parse(os.Args[2:])
+
+	var (
+		username, password string
+		hashedPassword     [32]byte
+	)
+
+	username = getStringFlagValue(usernameFlag)
+	password = getStringFlagValue(passwordFlag)
+	hashedPassword = sha256.Sum256([]byte(password))
+	// fmt.Printf("%x\n", hashedPassword)
+
+	if _, ok := strg[username]; ok {
+		return errors.New("user already exists")
+	}
+	strg[username] = UserData{
+		Credentials: Credentials{
+			Username:    username,
+			Password:    fmt.Sprintf("%x", hashedPassword),
+			LastLoginAt: time.Now(),
+		},
+		Passwords: []PasswordEntry{},
+	}
+
+	fmt.Println("Sign up succes!")
+
+	return nil
+}
+
+func handleLogin() error {
+	flagSet := flag.NewFlagSet("login", flag.ExitOnError)
+
+	usernameFlag := flagSet.String("username", "", "Login username")
+	passwordFlag := flagSet.String("password", "", "Login password")
+
+	flagSet.Parse(os.Args[2:])
+
+	var (
+		username, password string
+		hashedPassword     [32]byte
+	)
+
+	username = getStringFlagValue(usernameFlag)
+	password = getStringFlagValue(passwordFlag)
+	hashedPassword = sha256.Sum256([]byte(password))
+	// fmt.Printf("%x\n", hashedPassword)
+
+	if _, ok := strg[username]; !ok {
+		return errors.New("no users found")
+	}
+	if string(hashedPassword[:]) != strg[username].Credentials.Password {
+		return errors.New("wrong master password for user")
+	}
+
+	fmt.Println("Login succes!")
+
+	return nil
+}
+
+func getStringFlagValue(val *string) string {
+	var parsedVal string
+
+	if val != nil {
+		parsedVal = *val
+	}
+
+	return parsedVal
 }
 
 func encrypt(key, data []byte) ([]byte, error) {
