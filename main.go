@@ -5,17 +5,25 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
-	"encoding/hex"
+	"crypto/sha256"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"log"
 	"os"
+	"time"
 )
 
 type UserData struct {
-	Username  string          `json:"username"`
-	Passwords []PasswordEntry `json:"passwords"`
+	Credentials Credentials     `json:"credentials"`
+	Passwords   []PasswordEntry `json:"passwords"`
+}
+
+type Credentials struct {
+	Username    string    `json:"username"`
+	Password    string    `json:"password"`
+	LastLoginAt time.Time `json:"last_login_at"`
 }
 
 type PasswordEntry struct {
@@ -26,42 +34,145 @@ type PasswordEntry struct {
 	Description string `json:"description"`
 }
 
+type Storage map[string]UserData
+
+const (
+	CommandSignUp = "signup"
+	CommandLogin  = "login"
+)
+
+var (
+	// username = flag.String("username", "", "passman login -username=<username>")
+	// password = flag.String("password", "", "passman login -password=<password>")
+	strg = make(Storage)
+)
+
 func main() {
+	//Input
+	if err := handleCommand(); err != nil {
+		log.Println("handle command: ", err)
+	}
+
+	// if len(os.Args) < 4 {
+	// 	fmt.Println("not enough arguments")
+	// 	return
+	// }
+
+	// pe := PasswordEntry{
+	// 	Service:  os.Args[1],
+	// 	Login:    os.Args[2],
+	// 	Password: os.Args[3],
+	// }
+
 	key := make([]byte, 32)
 	_, err := io.ReadFull(rand.Reader, key)
 	if err != nil {
 		log.Fatal("create 256-bit key", err)
 	}
 
-	fmt.Println("Key:", hex.EncodeToString(key))
-
-	//Input
-	if len(os.Args) < 4 {
-		fmt.Println("not enough arguments")
-		return
-	}
-
-	pe := PasswordEntry{
-		Service:  os.Args[1],
-		Login:    os.Args[2],
-		Password: os.Args[3],
-	}
+	// fmt.Println("Key:", hex.EncodeToString(key))
 
 	//Encrypt
-	encrypted, err := encrypt(key, []byte(pe.Password))
-	if err != nil {
-		log.Fatal(err)
-	}
+	// encrypted, err := encrypt(key, []byte(pe.Password))
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
 
-	fmt.Printf("Encrypted: %s\n", hex.EncodeToString(encrypted))
+	// fmt.Printf("Encrypted: %s\n", hex.EncodeToString(encrypted))
 
-	decrypted, err := decrypt(key, encrypted)
-	if err != nil {
-		log.Fatal(err)
-	}
+	// decrypted, err := decrypt(key, encrypted)
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
 
-	fmt.Printf("Decrypted: %s\n", decrypted)
+	// fmt.Printf("Decrypted: %s\n", decrypted)
 	fmt.Println("saved")
+}
+
+func handleCommand() error {
+	switch os.Args[1] {
+	case CommandSignUp:
+		flagSet := flag.NewFlagSet("login", flag.ExitOnError)
+
+		username := flagSet.String("username", "", "passman login -username=<username>")
+		password := flagSet.String("password", "", "passman login -password=<password>")
+
+		flagSet.Parse(os.Args[2:])
+
+		var (
+			u, p           string
+			hashedPassword [32]byte
+		)
+
+		if username != nil {
+			if *username != "" {
+				u = *username
+			}
+		}
+
+		if password != nil {
+			if *password != "" {
+				p = *password
+
+				hashedPassword = sha256.Sum256([]byte(p))
+				fmt.Printf("%x\n", hashedPassword)
+			}
+		}
+
+		if _, ok := strg[u]; ok {
+			return errors.New("user already exists")
+		}
+		strg[u] = UserData{
+			Credentials: Credentials{
+				Username:    u,
+				Password:    fmt.Sprintf("%x", hashedPassword),
+				LastLoginAt: time.Now(),
+			},
+			Passwords: []PasswordEntry{},
+		}
+
+		fmt.Println("Sign up succes!")
+	case CommandLogin:
+		flagSet := flag.NewFlagSet("login", flag.ExitOnError)
+
+		username := flagSet.String("username", "", "passman login -username=<username>")
+		password := flagSet.String("password", "", "passman login -password=<password>")
+
+		flagSet.Parse(os.Args[2:])
+
+		var (
+			u, p           string
+			hashedPassword [32]byte
+		)
+
+		if username != nil {
+			if *username != "" {
+				u = *username
+			}
+		}
+
+		if password != nil {
+			if *password != "" {
+				p = *password
+
+				hashedPassword = sha256.Sum256([]byte(p))
+				fmt.Printf("%x\n", hashedPassword)
+			}
+		}
+
+		if _, ok := strg[u]; !ok {
+			return errors.New("no users found")
+		}
+		if string(hashedPassword[:]) != strg[u].Credentials.Password {
+			return errors.New("wrong master password for user")
+		}
+
+		fmt.Println("Login succes!")
+		// case CommandAdd:
+		// case CommandGet:
+	}
+
+	return nil
 }
 
 func encrypt(key, data []byte) ([]byte, error) {
