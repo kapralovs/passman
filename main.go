@@ -48,6 +48,7 @@ type PasswordEntry struct {
 }
 
 const (
+	CommandInit   = "init"
 	CommandSignUp = "signup"
 	CommandLogin  = "login"
 	CommandAdd    = "add"
@@ -74,6 +75,8 @@ func main() {
 
 func handleCommand() error {
 	switch os.Args[1] {
+	case CommandInit:
+		return initApp()
 	case CommandSignUp:
 		return signUp()
 	case CommandLogin:
@@ -81,6 +84,29 @@ func handleCommand() error {
 	case CommandAdd:
 		return addPassword()
 		// case CommandGet:
+	}
+
+	return nil
+}
+
+func initApp() error {
+	cfg := Config{
+		SessionDuration: time.Second * 30,
+	}
+
+	content, err := json.Marshal(&cfg)
+	if err != nil {
+		return err
+	}
+
+	file, err := os.Create("config.json")
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	if _, err := file.Write(content); err != nil {
+		return err
 	}
 
 	return nil
@@ -109,7 +135,19 @@ func signUp() error {
 		return err
 	}
 
-	file, err := os.Create("vault.json")
+	cfg, err := getConfig()
+	if err != nil {
+		return err
+	}
+
+	cfg.User.Name = username
+
+	if err = updateConfig(cfg); err != nil {
+		return err
+	}
+
+	filename := fmt.Sprintf("%s_vault.json", username)
+	file, err := os.Create(filename)
 	if err != nil {
 		return err
 	}
@@ -203,7 +241,8 @@ func addPassword() error {
 		return err
 	}
 
-	file, err := os.Create("vault.json")
+	filename := fmt.Sprintf("%s_vault.json", userData.Credentials.Username)
+	file, err := os.Create(filename)
 	if err != nil {
 		return err
 	}
@@ -240,6 +279,25 @@ func getConfig() (*Config, error) {
 	return cfg, nil
 }
 
+func updateConfig(cfg *Config) error {
+	content, err := json.Marshal(&cfg)
+	if err != nil {
+		return err
+	}
+
+	file, err := os.Create("config.json")
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	if _, err := file.Write(content); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func checkSession(cfg *Config, creds Credentials) error {
 	if time.Since(creds.LastLoginAt) > cfg.SessionDuration {
 		return errors.New("session exceeded")
@@ -264,13 +322,13 @@ func getUserData(username string) (*UserData, error) {
 
 	ud := new(UserData)
 
-	if err = json.Unmarshal(content, ud); err != nil {
+	if err = json.Unmarshal(content, &ud); err != nil {
 		return nil, err
 	}
 
-	if ud.Credentials.Username == username {
-		return nil, errors.New("no user data found")
-	}
+	// 	if ud.Credentials.Username != username {
+	// 	return nil, errors.New("no user data found")
+	// }
 
 	return ud, nil
 }
