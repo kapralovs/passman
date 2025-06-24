@@ -47,15 +47,11 @@ type PasswordEntry struct {
 	Description string `json:"description"`
 }
 
-type Storage map[string]UserData
-
 const (
 	CommandSignUp = "signup"
 	CommandLogin  = "login"
 	CommandAdd    = "add"
 )
-
-var strg = make(Storage)
 
 func main() {
 	//Input
@@ -95,10 +91,11 @@ func signUp() error {
 	hashedPassword := sha256.Sum256([]byte(password))
 	// fmt.Printf("%x\n", hashedPassword)
 
-	if _, ok := strg[username]; ok {
-		return errors.New("user already exists")
+	if err := checkUserData(username); err != nil {
+		return err
 	}
-	strg[username] = UserData{
+
+	ud := &UserData{
 		Credentials: Credentials{
 			Username:    username,
 			Password:    fmt.Sprintf("%x", hashedPassword),
@@ -107,20 +104,45 @@ func signUp() error {
 		Passwords: []PasswordEntry{},
 	}
 
+	updatedUserDataContent, err := json.Marshal(ud)
+	if err != nil {
+		return err
+	}
+
+	file, err := os.Create("vault.json")
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	_, err = file.Write(updatedUserDataContent)
+	if err != nil {
+		return err
+	}
+
 	fmt.Println("Sign up succes!")
 
 	return nil
 }
 
 func login() error {
-	username, password := parseCredentialsFlags(CommandSignUp)
+	_, password := parseCredentialsFlags(CommandSignUp)
 	hashedPassword := sha256.Sum256([]byte(password))
 	// fmt.Printf("%x\n", hashedPassword)
 
-	if _, ok := strg[username]; !ok {
-		return errors.New("no users found")
+	// Get current user name
+	cfg, err := getConfig()
+	if err != nil {
+		return err
 	}
-	if string(hashedPassword[:]) != strg[username].Credentials.Password {
+
+	// Get user data
+	userData, err := getUserData(cfg.User.Name)
+	if err != nil {
+		return err
+	}
+
+	if fmt.Sprintf("%x", hashedPassword) != userData.Credentials.Password {
 		return errors.New("wrong master password for user")
 	}
 
@@ -149,13 +171,6 @@ func addPassword() error {
 
 	service, login, password := parseNewPasswordFlags()
 
-	// key := make([]byte, 32)
-	// _, err = io.ReadFull(rand.Reader, key)
-	// if err != nil {
-	// 	log.Fatal("create 256-bit key", err)
-	// }
-
-	// fmt.Println("Key:", hex.EncodeToString(key))
 	key, err := hex.DecodeString(cfg.Key)
 	if err != nil {
 		return err
@@ -234,7 +249,9 @@ func checkSession(cfg *Config, creds Credentials) error {
 }
 
 func getUserData(username string) (*UserData, error) {
-	file, err := os.Open("vault.json")
+	filename := fmt.Sprintf("%s_vault.json", username)
+
+	file, err := os.Open(filename)
 	if err != nil {
 		return nil, err
 	}
@@ -245,7 +262,7 @@ func getUserData(username string) (*UserData, error) {
 		return nil, err
 	}
 
-	var ud *UserData
+	ud := new(UserData)
 
 	if err = json.Unmarshal(content, ud); err != nil {
 		return nil, err
@@ -256,6 +273,18 @@ func getUserData(username string) (*UserData, error) {
 	}
 
 	return ud, nil
+}
+
+func checkUserData(username string) error {
+	filename := fmt.Sprintf("%s_vault.json", username)
+
+	file, err := os.Open(filename)
+	if err == nil {
+		return err
+	}
+	defer file.Close()
+
+	return nil
 }
 
 func parseCredentialsFlags(operation string) (string, string) {
