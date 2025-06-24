@@ -103,21 +103,8 @@ func handleCommand() error {
 }
 
 func handleSignUp() error {
-	flagSet := flag.NewFlagSet("signup", flag.ExitOnError)
-
-	usernameFlag := flagSet.String("username", "", "passman login -username=<username>")
-	passwordFlag := flagSet.String("password", "", "passman login -password=<password>")
-
-	flagSet.Parse(os.Args[2:])
-
-	var (
-		username, password string
-		hashedPassword     [32]byte
-	)
-
-	username = getStringFlagValue(usernameFlag)
-	password = getStringFlagValue(passwordFlag)
-	hashedPassword = sha256.Sum256([]byte(password))
+	username, password := parseCredentialsFlags(CommandSignUp)
+	hashedPassword := sha256.Sum256([]byte(password))
 	// fmt.Printf("%x\n", hashedPassword)
 
 	if _, ok := strg[username]; ok {
@@ -138,21 +125,8 @@ func handleSignUp() error {
 }
 
 func handleLogin() error {
-	flagSet := flag.NewFlagSet("login", flag.ExitOnError)
-
-	usernameFlag := flagSet.String("username", "", "Login username")
-	passwordFlag := flagSet.String("password", "", "Login password")
-
-	flagSet.Parse(os.Args[2:])
-
-	var (
-		username, password string
-		hashedPassword     [32]byte
-	)
-
-	username = getStringFlagValue(usernameFlag)
-	password = getStringFlagValue(passwordFlag)
-	hashedPassword = sha256.Sum256([]byte(password))
+	username, password := parseCredentialsFlags(CommandSignUp)
+	hashedPassword := sha256.Sum256([]byte(password))
 	// fmt.Printf("%x\n", hashedPassword)
 
 	if _, ok := strg[username]; !ok {
@@ -165,6 +139,22 @@ func handleLogin() error {
 	fmt.Println("Login succes!")
 
 	return nil
+}
+
+func parseCredentialsFlags(operation string) (string, string) {
+	flagSet := flag.NewFlagSet(operation, flag.ExitOnError)
+
+	usernameFlag := flagSet.String("username", "", "passman login -username=<username>")
+	passwordFlag := flagSet.String("password", "", "passman login -password=<password>")
+
+	flagSet.Parse(os.Args[2:])
+
+	var username, password string
+
+	username = getStringFlagValue(usernameFlag)
+	password = getStringFlagValue(passwordFlag)
+
+	return username, password
 }
 
 func getStringFlagValue(val *string) string {
