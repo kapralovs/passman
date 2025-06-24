@@ -6,6 +6,8 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -14,6 +16,17 @@ import (
 	"os"
 	"time"
 )
+
+type Config struct {
+	User            UserConfig    `json:"user_config"`
+	SessionDuration time.Duration `json:"session_duration"`
+	Key             string        `json:"key"`
+}
+
+type UserConfig struct {
+	Name    string `json:"name"`
+	Trusted bool   `json:"trusted"`
+}
 
 type UserData struct {
 	Credentials Credentials     `json:"credentials"`
@@ -39,13 +52,10 @@ type Storage map[string]UserData
 const (
 	CommandSignUp = "signup"
 	CommandLogin  = "login"
+	CommandAdd    = "add"
 )
 
-var (
-	// username = flag.String("username", "", "passman login -username=<username>")
-	// password = flag.String("password", "", "passman login -password=<password>")
-	strg = make(Storage)
-)
+var strg = make(Storage)
 
 func main() {
 	//Input
@@ -58,51 +68,29 @@ func main() {
 	// 	return
 	// }
 
-	// pe := PasswordEntry{
-	// 	Service:  os.Args[1],
-	// 	Login:    os.Args[2],
-	// 	Password: os.Args[3],
-	// }
-
-	key := make([]byte, 32)
-	_, err := io.ReadFull(rand.Reader, key)
-	if err != nil {
-		log.Fatal("create 256-bit key", err)
-	}
-
-	// fmt.Println("Key:", hex.EncodeToString(key))
-
-	//Encrypt
-	// encrypted, err := encrypt(key, []byte(pe.Password))
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-
-	// fmt.Printf("Encrypted: %s\n", hex.EncodeToString(encrypted))
-
 	// decrypted, err := decrypt(key, encrypted)
 	// if err != nil {
 	// 	log.Fatal(err)
 	// }
 
 	// fmt.Printf("Decrypted: %s\n", decrypted)
-	fmt.Println("saved")
 }
 
 func handleCommand() error {
 	switch os.Args[1] {
 	case CommandSignUp:
-		return handleSignUp()
+		return signUp()
 	case CommandLogin:
-		return handleLogin()
-		// case CommandAdd:
+		return login()
+	case CommandAdd:
+		return addPassword()
 		// case CommandGet:
 	}
 
 	return nil
 }
 
-func handleSignUp() error {
+func signUp() error {
 	username, password := parseCredentialsFlags(CommandSignUp)
 	hashedPassword := sha256.Sum256([]byte(password))
 	// fmt.Printf("%x\n", hashedPassword)
@@ -124,7 +112,7 @@ func handleSignUp() error {
 	return nil
 }
 
-func handleLogin() error {
+func login() error {
 	username, password := parseCredentialsFlags(CommandSignUp)
 	hashedPassword := sha256.Sum256([]byte(password))
 	// fmt.Printf("%x\n", hashedPassword)
@@ -141,11 +129,140 @@ func handleLogin() error {
 	return nil
 }
 
+func addPassword() error {
+	// Get current user name
+	cfg, err := getConfig()
+	if err != nil {
+		return err
+	}
+
+	// Get user data
+	userData, err := getUserData(cfg.User.Name)
+	if err != nil {
+		return err
+	}
+
+	// Check login sessio
+	if err = checkSession(cfg, userData.Credentials); err != nil {
+		return err
+	}
+
+	service, login, password := parseNewPasswordFlags()
+
+	// key := make([]byte, 32)
+	// _, err = io.ReadFull(rand.Reader, key)
+	// if err != nil {
+	// 	log.Fatal("create 256-bit key", err)
+	// }
+
+	// fmt.Println("Key:", hex.EncodeToString(key))
+	key, err := hex.DecodeString(cfg.Key)
+	if err != nil {
+		return err
+	}
+
+	// Encrypt password
+	encrypted, err := encrypt(key, []byte(password))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// fmt.Printf("Encrypted: %s\n", hex.EncodeToString(encrypted))
+
+	// Check if service exists
+	for _, p := range userData.Passwords {
+		if service == p.Service {
+			return errors.New("service already exists")
+		}
+	}
+
+	// Save to file
+	userData.Passwords = append(userData.Passwords, PasswordEntry{
+		Service:  service,
+		Login:    login,
+		Password: hex.EncodeToString(encrypted),
+	})
+
+	updatedUserDataContent, err := json.Marshal(userData)
+	if err != nil {
+		return err
+	}
+
+	file, err := os.Create("vault.json")
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	_, err = file.Write(updatedUserDataContent)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println("Added")
+
+	return nil
+}
+
+func getConfig() (*Config, error) {
+	file, err := os.Open("config.json")
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	configContent, err := io.ReadAll(file)
+	if err != nil {
+		return nil, err
+	}
+
+	cfg := new(Config)
+
+	if err = json.Unmarshal(configContent, cfg); err != nil {
+		return nil, err
+	}
+
+	return cfg, nil
+}
+
+func checkSession(cfg *Config, creds Credentials) error {
+	if time.Since(creds.LastLoginAt) > cfg.SessionDuration {
+		return errors.New("session exceeded")
+	}
+
+	return nil
+}
+
+func getUserData(username string) (*UserData, error) {
+	file, err := os.Open("vault.json")
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	content, err := io.ReadAll(file)
+	if err != nil {
+		return nil, err
+	}
+
+	var ud *UserData
+
+	if err = json.Unmarshal(content, ud); err != nil {
+		return nil, err
+	}
+
+	if ud.Credentials.Username == username {
+		return nil, errors.New("no user data found")
+	}
+
+	return ud, nil
+}
+
 func parseCredentialsFlags(operation string) (string, string) {
 	flagSet := flag.NewFlagSet(operation, flag.ExitOnError)
 
-	usernameFlag := flagSet.String("username", "", "passman login -username=<username>")
-	passwordFlag := flagSet.String("password", "", "passman login -password=<password>")
+	usernameFlag := flagSet.String("username", "", "Auth username")
+	passwordFlag := flagSet.String("password", "", "Auth password")
 
 	flagSet.Parse(os.Args[2:])
 
@@ -155,6 +272,22 @@ func parseCredentialsFlags(operation string) (string, string) {
 	password = getStringFlagValue(passwordFlag)
 
 	return username, password
+}
+
+func parseNewPasswordFlags() (string, string, string) {
+	flagSet := flag.NewFlagSet(CommandAdd, flag.ExitOnError)
+
+	serviceFlag := flagSet.String("service", "", "Service name")
+	loginFlag := flagSet.String("login", "", "Service login")
+	passwordFlag := flagSet.String("password", "", "Service password")
+
+	flagSet.Parse(os.Args[2:])
+
+	service := getStringFlagValue(serviceFlag)
+	login := getStringFlagValue(loginFlag)
+	password := getStringFlagValue(passwordFlag)
+
+	return service, login, password
 }
 
 func getStringFlagValue(val *string) string {
