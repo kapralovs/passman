@@ -90,7 +90,14 @@ func handleCommand() error {
 }
 
 func initApp() error {
+	key := make([]byte, 32)
+	_, err := io.ReadFull(rand.Reader, key)
+	if err != nil {
+		return err
+	}
+
 	cfg := Config{
+		Key:             hex.EncodeToString(key),
 		SessionDuration: time.Second * 30,
 	}
 
@@ -115,7 +122,6 @@ func initApp() error {
 func signUp() error {
 	username, password := parseCredentialsFlags(CommandSignUp)
 	hashedPassword := sha256.Sum256([]byte(password))
-	// fmt.Printf("%x\n", hashedPassword)
 
 	if err := checkUserData(username); err != nil {
 		return err
@@ -158,8 +164,6 @@ func signUp() error {
 		return err
 	}
 
-	fmt.Println("Sign up succes!")
-
 	return nil
 }
 
@@ -184,7 +188,24 @@ func login() error {
 		return errors.New("wrong master password for user")
 	}
 
-	fmt.Println("Login succes!")
+	userData.Credentials.LastLoginAt = time.Now()
+
+	updatedUserDataContent, err := json.Marshal(userData)
+	if err != nil {
+		return err
+	}
+
+	filename := fmt.Sprintf("%s_vault.json", cfg.User.Name)
+	file, err := os.Create(filename)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	_, err = file.Write(updatedUserDataContent)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -253,8 +274,6 @@ func addPassword() error {
 		return err
 	}
 
-	fmt.Println("Added")
-
 	return nil
 }
 
@@ -299,7 +318,12 @@ func updateConfig(cfg *Config) error {
 }
 
 func checkSession(cfg *Config, creds Credentials) error {
-	if time.Since(creds.LastLoginAt) > cfg.SessionDuration {
+	loc, err := time.LoadLocation("Europe/Moscow")
+	if err != nil {
+		return err
+	}
+
+	if time.Since(creds.LastLoginAt.In(loc)) > cfg.SessionDuration {
 		return errors.New("session exceeded")
 	}
 
@@ -308,7 +332,6 @@ func checkSession(cfg *Config, creds Credentials) error {
 
 func getUserData(username string) (*UserData, error) {
 	filename := fmt.Sprintf("%s_vault.json", username)
-
 	file, err := os.Open(filename)
 	if err != nil {
 		return nil, err
