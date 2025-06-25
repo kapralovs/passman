@@ -47,15 +47,12 @@ type PasswordEntry struct {
 	Description string `json:"description"`
 }
 
-type Storage map[string]UserData
-
 const (
+	CommandInit   = "init"
 	CommandSignUp = "signup"
 	CommandLogin  = "login"
 	CommandAdd    = "add"
 )
-
-var strg = make(Storage)
 
 func main() {
 	//Input
@@ -78,6 +75,8 @@ func main() {
 
 func handleCommand() error {
 	switch os.Args[1] {
+	case CommandInit:
+		return initApp()
 	case CommandSignUp:
 		return signUp()
 	case CommandLogin:
@@ -90,15 +89,45 @@ func handleCommand() error {
 	return nil
 }
 
+func initApp() error {
+	key := make([]byte, 32)
+	_, err := io.ReadFull(rand.Reader, key)
+	if err != nil {
+		return err
+	}
+
+	cfg := Config{
+		Key:             hex.EncodeToString(key),
+		SessionDuration: time.Second * 30,
+	}
+
+	content, err := json.Marshal(&cfg)
+	if err != nil {
+		return err
+	}
+
+	file, err := os.Create("config.json")
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	if _, err := file.Write(content); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func signUp() error {
 	username, password := parseCredentialsFlags(CommandSignUp)
 	hashedPassword := sha256.Sum256([]byte(password))
-	// fmt.Printf("%x\n", hashedPassword)
 
-	if _, ok := strg[username]; ok {
-		return errors.New("user already exists")
+	if err := checkUserData(username); err != nil {
+		return err
 	}
-	strg[username] = UserData{
+
+	ud := &UserData{
 		Credentials: Credentials{
 			Username:    username,
 			Password:    fmt.Sprintf("%x", hashedPassword),
@@ -107,24 +136,75 @@ func signUp() error {
 		Passwords: []PasswordEntry{},
 	}
 
-	fmt.Println("Sign up succes!")
+	updatedUserDataContent, err := json.Marshal(ud)
+	if err != nil {
+		return err
+	}
+
+	cfg, err := getConfig()
+	if err != nil {
+		return err
+	}
+
+	cfg.User.Name = username
+
+	if err = updateConfig(cfg); err != nil {
+		return err
+	}
+
+	filename := fmt.Sprintf("%s_vault.json", username)
+	file, err := os.Create(filename)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	_, err = file.Write(updatedUserDataContent)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
 
 func login() error {
-	username, password := parseCredentialsFlags(CommandSignUp)
+	_, password := parseCredentialsFlags(CommandSignUp)
 	hashedPassword := sha256.Sum256([]byte(password))
-	// fmt.Printf("%x\n", hashedPassword)
 
-	if _, ok := strg[username]; !ok {
-		return errors.New("no users found")
+	// Get current user name
+	cfg, err := getConfig()
+	if err != nil {
+		return err
 	}
-	if string(hashedPassword[:]) != strg[username].Credentials.Password {
+
+	// Get user data
+	userData, err := getUserData(cfg.User.Name)
+	if err != nil {
+		return err
+	}
+
+	if fmt.Sprintf("%x", hashedPassword) != userData.Credentials.Password {
 		return errors.New("wrong master password for user")
 	}
 
-	fmt.Println("Login succes!")
+	userData.Credentials.LastLoginAt = time.Now()
+
+	updatedUserDataContent, err := json.Marshal(userData)
+	if err != nil {
+		return err
+	}
+
+	filename := fmt.Sprintf("%s_vault.json", cfg.User.Name)
+	file, err := os.Create(filename)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	_, err = file.Write(updatedUserDataContent)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -149,13 +229,6 @@ func addPassword() error {
 
 	service, login, password := parseNewPasswordFlags()
 
-	// key := make([]byte, 32)
-	// _, err = io.ReadFull(rand.Reader, key)
-	// if err != nil {
-	// 	log.Fatal("create 256-bit key", err)
-	// }
-
-	// fmt.Println("Key:", hex.EncodeToString(key))
 	key, err := hex.DecodeString(cfg.Key)
 	if err != nil {
 		return err
@@ -166,8 +239,6 @@ func addPassword() error {
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	// fmt.Printf("Encrypted: %s\n", hex.EncodeToString(encrypted))
 
 	// Check if service exists
 	for _, p := range userData.Passwords {
@@ -188,7 +259,8 @@ func addPassword() error {
 		return err
 	}
 
-	file, err := os.Create("vault.json")
+	filename := fmt.Sprintf("%s_vault.json", userData.Credentials.Username)
+	file, err := os.Create(filename)
 	if err != nil {
 		return err
 	}
@@ -198,8 +270,6 @@ func addPassword() error {
 	if err != nil {
 		return err
 	}
-
-	fmt.Println("Added")
 
 	return nil
 }
@@ -225,8 +295,32 @@ func getConfig() (*Config, error) {
 	return cfg, nil
 }
 
+func updateConfig(cfg *Config) error {
+	content, err := json.Marshal(&cfg)
+	if err != nil {
+		return err
+	}
+
+	file, err := os.Create("config.json")
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	if _, err := file.Write(content); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func checkSession(cfg *Config, creds Credentials) error {
-	if time.Since(creds.LastLoginAt) > cfg.SessionDuration {
+	loc, err := time.LoadLocation("Europe/Moscow")
+	if err != nil {
+		return err
+	}
+
+	if time.Since(creds.LastLoginAt.In(loc)) > cfg.SessionDuration {
 		return errors.New("session exceeded")
 	}
 
@@ -234,7 +328,8 @@ func checkSession(cfg *Config, creds Credentials) error {
 }
 
 func getUserData(username string) (*UserData, error) {
-	file, err := os.Open("vault.json")
+	filename := fmt.Sprintf("%s_vault.json", username)
+	file, err := os.Open(filename)
 	if err != nil {
 		return nil, err
 	}
@@ -245,17 +340,29 @@ func getUserData(username string) (*UserData, error) {
 		return nil, err
 	}
 
-	var ud *UserData
+	ud := new(UserData)
 
-	if err = json.Unmarshal(content, ud); err != nil {
+	if err = json.Unmarshal(content, &ud); err != nil {
 		return nil, err
 	}
 
-	if ud.Credentials.Username == username {
-		return nil, errors.New("no user data found")
-	}
+	// 	if ud.Credentials.Username != username {
+	// 	return nil, errors.New("no user data found")
+	// }
 
 	return ud, nil
+}
+
+func checkUserData(username string) error {
+	filename := fmt.Sprintf("%s_vault.json", username)
+
+	file, err := os.Open(filename)
+	if err == nil {
+		return err
+	}
+	defer file.Close()
+
+	return nil
 }
 
 func parseCredentialsFlags(operation string) (string, string) {
