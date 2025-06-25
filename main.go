@@ -170,7 +170,6 @@ func signUp() error {
 func login() error {
 	_, password := parseCredentialsFlags(CommandSignUp)
 	hashedPassword := sha256.Sum256([]byte(password))
-	// fmt.Printf("%x\n", hashedPassword)
 
 	// Get current user name
 	cfg, err := getConfig()
@@ -240,8 +239,6 @@ func addPassword() error {
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	// fmt.Printf("Encrypted: %s\n", hex.EncodeToString(encrypted))
 
 	// Check if service exists
 	for _, p := range userData.Passwords {
