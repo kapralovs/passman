@@ -52,6 +52,7 @@ const (
 	CommandSignUp = "signup"
 	CommandLogin  = "login"
 	CommandAdd    = "add"
+	CommandGet    = "get"
 )
 
 func main() {
@@ -63,11 +64,6 @@ func main() {
 	// if len(os.Args) < 4 {
 	// 	fmt.Println("not enough arguments")
 	// 	return
-	// }
-
-	// decrypted, err := decrypt(key, encrypted)
-	// if err != nil {
-	// 	log.Fatal(err)
 	// }
 
 	// fmt.Printf("Decrypted: %s\n", decrypted)
@@ -83,7 +79,8 @@ func handleCommand() error {
 		return login()
 	case CommandAdd:
 		return addPassword()
-		// case CommandGet:
+	case CommandGet:
+		return getPassword()
 	}
 
 	return nil
@@ -269,6 +266,51 @@ func addPassword() error {
 	_, err = file.Write(updatedUserDataContent)
 	if err != nil {
 		return err
+	}
+
+	return nil
+}
+
+func getPassword() error {
+	// Get current user name
+	cfg, err := getConfig()
+	if err != nil {
+		return err
+	}
+
+	// Get user data
+	userData, err := getUserData(cfg.User.Name)
+	if err != nil {
+		return err
+	}
+
+	// Check login sessio
+	if err = checkSession(cfg, userData.Credentials); err != nil {
+		return err
+	}
+
+	service, _, _ := parseNewPasswordFlags()
+
+	key, err := hex.DecodeString(cfg.Key)
+	if err != nil {
+		return err
+	}
+
+	// Check if service exists
+	for _, p := range userData.Passwords {
+		if service == p.Service {
+			encrypted, err := hex.DecodeString(p.Password)
+			if err != nil {
+				return err
+			}
+
+			decrypted, err := decrypt(key, encrypted)
+			if err != nil {
+				return err
+			}
+
+			fmt.Fprint(os.Stdout, string(decrypted))
+		}
 	}
 
 	return nil
