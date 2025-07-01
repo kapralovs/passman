@@ -14,7 +14,10 @@ import (
 	"io"
 	"log"
 	"os"
+	"syscall"
 	"time"
+
+	"golang.org/x/term"
 )
 
 type Config struct {
@@ -117,7 +120,14 @@ func initApp() error {
 }
 
 func signUp() error {
-	username, password := parseCredentialsFlags(CommandSignUp)
+	username, _ := parseCredentialsFlags(CommandSignUp)
+
+	fmt.Println("Password:")
+	password, err := term.ReadPassword(int(syscall.Stdin))
+	if err != nil {
+		return err
+	}
+
 	hashedPassword := sha256.Sum256([]byte(password))
 
 	if err := checkUserData(username); err != nil {
@@ -165,7 +175,13 @@ func signUp() error {
 }
 
 func login() error {
-	_, password := parseCredentialsFlags(CommandSignUp)
+	_, _ = parseCredentialsFlags(CommandSignUp)
+
+	fmt.Println("Password:")
+	password, err := term.ReadPassword(int(syscall.Stdin))
+	if err != nil {
+		return err
+	}
 	hashedPassword := sha256.Sum256([]byte(password))
 
 	// Get current user name
