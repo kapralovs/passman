@@ -1,5 +1,9 @@
 module github.com/kapralovs/passman
 
-go 1.20
+go 1.23.0
 
-require github.com/joho/godotenv v1.5.1
+toolchain go1.24.4
+
+require golang.org/x/term v0.32.0
+
+require golang.org/x/sys v0.33.0 // indirect

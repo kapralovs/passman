@@ -14,7 +14,10 @@ import (
 	"io"
 	"log"
 	"os"
+	"syscall"
 	"time"
+
+	"golang.org/x/term"
 )
 
 type Config struct {
@@ -56,17 +59,9 @@ const (
 )
 
 func main() {
-	//Input
 	if err := handleCommand(); err != nil {
 		log.Println("handle command: ", err)
 	}
-
-	// if len(os.Args) < 4 {
-	// 	fmt.Println("not enough arguments")
-	// 	return
-	// }
-
-	// fmt.Printf("Decrypted: %s\n", decrypted)
 }
 
 func handleCommand() error {
@@ -117,7 +112,14 @@ func initApp() error {
 }
 
 func signUp() error {
-	username, password := parseCredentialsFlags(CommandSignUp)
+	username := parseUsernameFlag(CommandSignUp)
+
+	fmt.Println("Password:")
+	password, err := term.ReadPassword(int(syscall.Stdin))
+	if err != nil {
+		return err
+	}
+
 	hashedPassword := sha256.Sum256([]byte(password))
 
 	if err := checkUserData(username); err != nil {
@@ -165,7 +167,12 @@ func signUp() error {
 }
 
 func login() error {
-	_, password := parseCredentialsFlags(CommandSignUp)
+	fmt.Println("Password:")
+	password, err := term.ReadPassword(int(syscall.Stdin))
+	if err != nil {
+		return err
+	}
+
 	hashedPassword := sha256.Sum256([]byte(password))
 
 	// Get current user name
@@ -192,6 +199,7 @@ func login() error {
 	}
 
 	filename := fmt.Sprintf("%s_vault.json", cfg.User.Name)
+
 	file, err := os.Create(filename)
 	if err != nil {
 		return err
@@ -407,20 +415,13 @@ func checkUserData(username string) error {
 	return nil
 }
 
-func parseCredentialsFlags(operation string) (string, string) {
+func parseUsernameFlag(operation string) string {
 	flagSet := flag.NewFlagSet(operation, flag.ExitOnError)
-
 	usernameFlag := flagSet.String("username", "", "Auth username")
-	passwordFlag := flagSet.String("password", "", "Auth password")
 
 	flagSet.Parse(os.Args[2:])
 
-	var username, password string
-
-	username = getStringFlagValue(usernameFlag)
-	password = getStringFlagValue(passwordFlag)
-
-	return username, password
+	return getStringFlagValue(usernameFlag)
 }
 
 func parseNewPasswordFlags() (string, string, string) {
