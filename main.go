@@ -76,9 +76,9 @@ func handleCommand() error {
 		return addPassword()
 	case CommandGet:
 		return getPassword()
+	default:
+		return fmt.Errorf("invalid command: %s", os.Args[1])
 	}
-
-	return nil
 }
 
 func initApp() error {
