@@ -58,6 +58,10 @@ const (
 	CommandGet    = "get"
 )
 
+var (
+	ErrSessionExceeded = errors.New("session exceeded")
+)
+
 func main() {
 	if err := handleCommand(); err != nil {
 		log.Println("handle command: ", err)
@@ -227,12 +231,24 @@ func addPassword() error {
 		return err
 	}
 
-	// Check login sessio
+	// Check login session
 	if err = checkSession(cfg, userData.Credentials); err != nil {
-		return err
+		if errors.Is(err, ErrSessionExceeded) {
+			if err = login(); err != nil {
+				return err
+			}
+		} else {
+			return err
+		}
 	}
 
-	service, login, password := parseNewPasswordFlags()
+	service, login := parseNewPasswordFlags()
+
+	fmt.Println("Password:")
+	password, err := term.ReadPassword(int(syscall.Stdin))
+	if err != nil {
+		return err
+	}
 
 	key, err := hex.DecodeString(cfg.Key)
 	if err != nil {
@@ -294,10 +310,16 @@ func getPassword() error {
 
 	// Check login sessio
 	if err = checkSession(cfg, userData.Credentials); err != nil {
-		return err
+		if errors.Is(err, ErrSessionExceeded) {
+			if err = login(); err != nil {
+				return err
+			}
+		} else {
+			return err
+		}
 	}
 
-	service, _, _ := parseNewPasswordFlags()
+	service, _ := parseNewPasswordFlags()
 
 	key, err := hex.DecodeString(cfg.Key)
 	if err != nil {
@@ -371,7 +393,7 @@ func checkSession(cfg *Config, creds Credentials) error {
 	}
 
 	if time.Since(creds.LastLoginAt.In(loc)) > cfg.SessionDuration {
-		return errors.New("session exceeded")
+		return ErrSessionExceeded
 	}
 
 	return nil
@@ -424,20 +446,18 @@ func parseUsernameFlag(operation string) string {
 	return getStringFlagValue(usernameFlag)
 }
 
-func parseNewPasswordFlags() (string, string, string) {
+func parseNewPasswordFlags() (string, string) {
 	flagSet := flag.NewFlagSet(CommandAdd, flag.ExitOnError)
 
 	serviceFlag := flagSet.String("service", "", "Service name")
 	loginFlag := flagSet.String("login", "", "Service login")
-	passwordFlag := flagSet.String("password", "", "Service password")
 
 	flagSet.Parse(os.Args[2:])
 
 	service := getStringFlagValue(serviceFlag)
 	login := getStringFlagValue(loginFlag)
-	password := getStringFlagValue(passwordFlag)
 
-	return service, login, password
+	return service, login
 }
 
 func getStringFlagValue(val *string) string {
