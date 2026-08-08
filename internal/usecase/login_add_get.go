@@ -8,6 +8,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/kapralovs/passman/internal/config"
 	"github.com/kapralovs/passman/internal/entities"
 	"github.com/kapralovs/passman/internal/repository"
 	"golang.org/x/term"
@@ -15,89 +16,79 @@ import (
 
 // LoginUsecase отвечает за вход в систему.
 type LoginUsecase struct {
-	ConfigRepo repository.ConfigRepository
-	VaultRepo  repository.VaultRepository
+	VaultRepo repository.VaultRepository
 }
 
 // NewLoginUsecase создаёт новый use case входа.
-func NewLoginUsecase(cfgRepo repository.ConfigRepository, vaultRepo repository.VaultRepository) *LoginUsecase {
+func NewLoginUsecase(vaultRepo repository.VaultRepository) *LoginUsecase {
 	return &LoginUsecase{
-		ConfigRepo: cfgRepo,
-		VaultRepo:  vaultRepo,
+		VaultRepo: vaultRepo,
 	}
 }
 
-// Execute выполняет вход пользователя.
-func (u *LoginUsecase) Execute() error {
+// Execute выполняет вход пользователя. Возвращает обновлённый конфиг.
+func (u *LoginUsecase) Execute(cfg *config.Config) (*config.Config, error) {
 	fmt.Print("Password: ")
 	password, err := term.ReadPassword(int(os.Stdin.Fd()))
 	fmt.Println()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	hashedPassword := sha256.Sum256(password)
 
-	cfg, err := u.ConfigRepo.Read()
-	if err != nil {
-		return err
-	}
-
 	userData, err := u.VaultRepo.Read(cfg.User.Name)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if hex.EncodeToString(hashedPassword[:]) != userData.Credentials.Password {
-		return errors.New("wrong master password for user")
+		return nil, errors.New("wrong master password for user")
 	}
 
 	userData.Credentials.LastLoginAt = time.Now()
-	return u.VaultRepo.Write(cfg.User.Name, userData)
+	if err := u.VaultRepo.Write(cfg.User.Name, userData); err != nil {
+		return nil, err
+	}
+
+	return cfg, nil
 }
 
 // AddPasswordUsecase отвечает за добавление пароля.
 type AddPasswordUsecase struct {
-	ConfigRepo  repository.ConfigRepository
-	VaultRepo   repository.VaultRepository
-	Crypto      CryptoUsecase
-	SessionTTL  time.Duration
+	VaultRepo  repository.VaultRepository
+	Crypto     CryptoUsecase
+	SessionTTL time.Duration
 }
 
 // NewAddPasswordUsecase создаёт новый use case добавления пароля.
-func NewAddPasswordUsecase(cfgRepo repository.ConfigRepository, vaultRepo repository.VaultRepository, crypto CryptoUsecase, sessionTTL time.Duration) *AddPasswordUsecase {
+func NewAddPasswordUsecase(vaultRepo repository.VaultRepository, crypto CryptoUsecase, sessionTTL time.Duration) *AddPasswordUsecase {
 	return &AddPasswordUsecase{
-		ConfigRepo: cfgRepo,
 		VaultRepo:  vaultRepo,
 		Crypto:     crypto,
 		SessionTTL: sessionTTL,
 	}
 }
 
-// Execute добавляет новый пароль.
-func (u *AddPasswordUsecase) Execute(service, login, password string) error {
-	cfg, err := u.ConfigRepo.Read()
-	if err != nil {
-		return err
-	}
-
+// Execute добавляет новый пароль. Возвращает обновлённый конфиг и данные пользователя.
+func (u *AddPasswordUsecase) Execute(cfg *config.Config, service, login, password string) (*config.Config, *entities.UserData, error) {
 	userData, err := u.VaultRepo.Read(cfg.User.Name)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 
 	if time.Since(userData.Credentials.LastLoginAt) > u.SessionTTL {
-		return errors.New("session exceeded")
+		return nil, nil, errors.New("session exceeded")
 	}
 
 	encrypted, err := u.Crypto.Encrypt([]byte(password))
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 
 	for _, p := range userData.Passwords {
 		if service == p.Service {
-			return errors.New("service already exists")
+			return nil, nil, errors.New("service already exists")
 		}
 	}
 
@@ -107,21 +98,19 @@ func (u *AddPasswordUsecase) Execute(service, login, password string) error {
 		Password: hex.EncodeToString(encrypted),
 	})
 
-	return u.VaultRepo.Write(cfg.User.Name, userData)
+	return cfg, userData, nil
 }
 
 // GetPasswordUsecase отвечает за получение пароля.
 type GetPasswordUsecase struct {
-	ConfigRepo  repository.ConfigRepository
-	VaultRepo   repository.VaultRepository
-	Crypto      CryptoUsecase
-	SessionTTL  time.Duration
+	VaultRepo  repository.VaultRepository
+	Crypto     CryptoUsecase
+	SessionTTL time.Duration
 }
 
 // NewGetPasswordUsecase создаёт новый use case получения пароля.
-func NewGetPasswordUsecase(cfgRepo repository.ConfigRepository, vaultRepo repository.VaultRepository, crypto CryptoUsecase, sessionTTL time.Duration) *GetPasswordUsecase {
+func NewGetPasswordUsecase(vaultRepo repository.VaultRepository, crypto CryptoUsecase, sessionTTL time.Duration) *GetPasswordUsecase {
 	return &GetPasswordUsecase{
-		ConfigRepo: cfgRepo,
 		VaultRepo:  vaultRepo,
 		Crypto:     crypto,
 		SessionTTL: sessionTTL,
@@ -129,12 +118,7 @@ func NewGetPasswordUsecase(cfgRepo repository.ConfigRepository, vaultRepo reposi
 }
 
 // Execute возвращает расшифрованный пароль по названию сервиса.
-func (u *GetPasswordUsecase) Execute(service string) (string, error) {
-	cfg, err := u.ConfigRepo.Read()
-	if err != nil {
-		return "", err
-	}
-
+func (u *GetPasswordUsecase) Execute(cfg *config.Config, service string) (string, error) {
 	userData, err := u.VaultRepo.Read(cfg.User.Name)
 	if err != nil {
 		return "", err

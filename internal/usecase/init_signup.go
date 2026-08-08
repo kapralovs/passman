@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/kapralovs/passman/internal/config"
 	"github.com/kapralovs/passman/internal/entities"
 	"github.com/kapralovs/passman/internal/repository"
 	"golang.org/x/term"
@@ -14,12 +15,12 @@ import (
 
 // InitUsecase отвечает за инициализацию приложения.
 type InitUsecase struct {
-	ConfigRepo repository.ConfigRepository
+	ConfigPath string
 }
 
 // NewInitUsecase создаёт новый use case инициализации.
-func NewInitUsecase(cfgRepo repository.ConfigRepository) *InitUsecase {
-	return &InitUsecase{ConfigRepo: cfgRepo}
+func NewInitUsecase(configPath string) *InitUsecase {
+	return &InitUsecase{ConfigPath: configPath}
 }
 
 // Execute генерирует ключ и сохраняет конфигурацию.
@@ -29,42 +30,40 @@ func (u *InitUsecase) Execute() error {
 		key[i] = byte(i + 1)
 	}
 
-	cfg := &entities.Config{
+	cfg := &config.Config{
 		Key:             hex.EncodeToString(key),
 		SessionDuration: 30,
 	}
 
-	return u.ConfigRepo.Write(cfg)
+	return config.Save(u.ConfigPath, cfg)
 }
 
 // SignUpUsecase отвечает за регистрацию нового пользователя.
 type SignUpUsecase struct {
-	ConfigRepo repository.ConfigRepository
-	VaultRepo  repository.VaultRepository
+	VaultRepo repository.VaultRepository
 }
 
 // NewSignUpUsecase создаёт новый use case регистрации.
-func NewSignUpUsecase(cfgRepo repository.ConfigRepository, vaultRepo repository.VaultRepository) *SignUpUsecase {
+func NewSignUpUsecase(vaultRepo repository.VaultRepository) *SignUpUsecase {
 	return &SignUpUsecase{
-		ConfigRepo: cfgRepo,
-		VaultRepo:  vaultRepo,
+		VaultRepo: vaultRepo,
 	}
 }
 
-// Execute регистрирует нового пользователя.
-func (u *SignUpUsecase) Execute(username string) error {
+// Execute регистрирует нового пользователя. Возвращает обновлённый конфиг.
+func (u *SignUpUsecase) Execute(cfg *config.Config, username string) (*config.Config, error) {
 	fmt.Print("Password: ")
 	password, err := term.ReadPassword(int(os.Stdin.Fd()))
 	fmt.Println()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	hashedPassword := sha256.Sum256(password)
 
 	// Проверяем, не занят ли username
 	if _, err := u.VaultRepo.Read(username); err == nil {
-		return fmt.Errorf("user %q already exists", username)
+		return nil, fmt.Errorf("user %q already exists", username)
 	}
 
 	ud := &entities.UserData{
@@ -76,15 +75,10 @@ func (u *SignUpUsecase) Execute(username string) error {
 		Passwords: []entities.PasswordEntry{},
 	}
 
-	cfg, err := u.ConfigRepo.Read()
-	if err != nil {
-		return err
-	}
-
 	cfg.User.Name = username
-	if err := u.ConfigRepo.Write(cfg); err != nil {
-		return err
+	if err := u.VaultRepo.Write(username, ud); err != nil {
+		return nil, err
 	}
 
-	return u.VaultRepo.Write(username, ud)
+	return cfg, nil
 }
