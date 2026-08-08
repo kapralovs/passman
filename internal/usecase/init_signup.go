@@ -1,15 +1,16 @@
 package usecase
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"os"
-	"time"
 
 	"github.com/kapralovs/passman/internal/config"
 	"github.com/kapralovs/passman/internal/entities"
 	"github.com/kapralovs/passman/internal/repository"
+	"github.com/kapralovs/passman/internal/session"
 	"golang.org/x/term"
 )
 
@@ -26,13 +27,13 @@ func NewInitUsecase(configPath string) *InitUsecase {
 // Execute генерирует ключ и сохраняет конфигурацию.
 func (u *InitUsecase) Execute() error {
 	key := make([]byte, 32)
-	for i := range key {
-		key[i] = byte(i + 1)
+	if _, err := rand.Read(key); err != nil {
+		return err
 	}
 
 	cfg := &config.Config{
-		Key:             hex.EncodeToString(key),
 		SessionDuration: 30,
+		Key:             hex.EncodeToString(key),
 	}
 
 	return config.Save(u.ConfigPath, cfg)
@@ -40,45 +41,50 @@ func (u *InitUsecase) Execute() error {
 
 // SignUpUsecase отвечает за регистрацию нового пользователя.
 type SignUpUsecase struct {
-	VaultRepo repository.VaultRepository
+	VaultRepo    repository.VaultRepository
+	SessionRepo  repository.SessionRepository
 }
 
 // NewSignUpUsecase создаёт новый use case регистрации.
-func NewSignUpUsecase(vaultRepo repository.VaultRepository) *SignUpUsecase {
+func NewSignUpUsecase(vaultRepo repository.VaultRepository, sessionRepo repository.SessionRepository) *SignUpUsecase {
 	return &SignUpUsecase{
-		VaultRepo: vaultRepo,
+		VaultRepo:   vaultRepo,
+		SessionRepo: sessionRepo,
 	}
 }
 
-// Execute регистрирует нового пользователя. Возвращает обновлённый конфиг.
-func (u *SignUpUsecase) Execute(cfg *config.Config, username string) (*config.Config, error) {
+// Execute регистрирует нового пользователя.
+func (u *SignUpUsecase) Execute(username string) error {
 	fmt.Print("Password: ")
 	password, err := term.ReadPassword(int(os.Stdin.Fd()))
 	fmt.Println()
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	hashedPassword := sha256.Sum256(password)
 
 	// Проверяем, не занят ли username
 	if _, err := u.VaultRepo.Read(username); err == nil {
-		return nil, fmt.Errorf("user %q already exists", username)
+		return fmt.Errorf("user %q already exists", username)
 	}
 
 	ud := &entities.UserData{
 		Credentials: entities.Credentials{
-			Username:    username,
-			Password:    hex.EncodeToString(hashedPassword[:]),
-			LastLoginAt: time.Now(),
+			Username: username,
+			Password: hex.EncodeToString(hashedPassword[:]),
 		},
 		Passwords: []entities.PasswordEntry{},
 	}
 
-	cfg.User.Name = username
 	if err := u.VaultRepo.Write(username, ud); err != nil {
-		return nil, err
+		return err
 	}
 
-	return cfg, nil
+	sess := &session.Session{
+		Username: username,
+		Trusted:  true,
+	}
+
+	return u.SessionRepo.Save(sess)
 }

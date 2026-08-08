@@ -7,6 +7,7 @@ import (
 
 	"github.com/kapralovs/passman/internal/config"
 	"github.com/kapralovs/passman/internal/entities"
+	"github.com/kapralovs/passman/internal/session"
 )
 
 // --- Mock repositories ---
@@ -36,6 +37,30 @@ func (m *mockVaultRepo) Write(username string, data *entities.UserData) error {
 		return m.err
 	}
 	m.data[username] = data
+	return nil
+}
+
+type mockSessionRepo struct {
+	sess *session.Session
+	err  error
+}
+
+func newMockSessionRepo() *mockSessionRepo {
+	return &mockSessionRepo{sess: &session.Session{}}
+}
+
+func (m *mockSessionRepo) Load() (*session.Session, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.sess, nil
+}
+
+func (m *mockSessionRepo) Save(s *session.Session) error {
+	if m.err != nil {
+		return m.err
+	}
+	m.sess = s
 	return nil
 }
 
@@ -94,26 +119,6 @@ func TestInitUsecase_Execute(t *testing.T) {
 	}
 }
 
-func TestSignUpUsecase_Execute(t *testing.T) {
-	vaultRepo := newMockVaultRepo()
-	uc := NewSignUpUsecase(vaultRepo)
-
-	// Pre-populate vault with user
-	vaultRepo.data["testuser"] = &entities.UserData{
-		Credentials: entities.Credentials{Username: "testuser"},
-	}
-
-	cfg := &config.Config{
-		User: config.UserConfig{Name: ""},
-	}
-
-	// SignUp doesn't accept password via args — it reads from terminal.
-	// We can't easily test the full flow without mocking term.ReadPassword.
-	// The important thing is the interface is correct.
-	_ = cfg
-	_ = uc
-}
-
 func TestAddPasswordUsecase_SessionExceeded(t *testing.T) {
 	vaultRepo := newMockVaultRepo()
 	vaultRepo.data["testuser"] = &entities.UserData{
@@ -126,11 +131,9 @@ func TestAddPasswordUsecase_SessionExceeded(t *testing.T) {
 	crypto := &mockCrypto{}
 	uc := NewAddPasswordUsecase(vaultRepo, crypto, 30*time.Minute)
 
-	cfg := &config.Config{
-		User: config.UserConfig{Name: "testuser"},
-	}
+	sess := &session.Session{Username: "testuser"}
 
-	_, _, err := uc.Execute(cfg, "gmail", "user@gmail.com", "password123")
+	_, _, err := uc.Execute(sess, "gmail", "user@gmail.com", "password123")
 	if err == nil {
 		t.Error("expected session exceeded error, got nil")
 	}
@@ -152,11 +155,9 @@ func TestAddPasswordUsecase_Success(t *testing.T) {
 	crypto := &mockCrypto{}
 	uc := NewAddPasswordUsecase(vaultRepo, crypto, 30*time.Minute)
 
-	cfg := &config.Config{
-		User: config.UserConfig{Name: "testuser"},
-	}
+	sess := &session.Session{Username: "testuser"}
 
-	_, userData, err := uc.Execute(cfg, "gmail", "user@gmail.com", "password123")
+	_, userData, err := uc.Execute(sess, "gmail", "user@gmail.com", "password123")
 	if err != nil {
 		t.Fatalf("Execute failed: %v", err)
 	}
@@ -189,11 +190,9 @@ func TestAddPasswordUsecase_DuplicateService(t *testing.T) {
 	crypto := &mockCrypto{}
 	uc := NewAddPasswordUsecase(vaultRepo, crypto, 30*time.Minute)
 
-	cfg := &config.Config{
-		User: config.UserConfig{Name: "testuser"},
-	}
+	sess := &session.Session{Username: "testuser"}
 
-	_, _, err := uc.Execute(cfg, "gmail", "other@gmail.com", "otherpass")
+	_, _, err := uc.Execute(sess, "gmail", "other@gmail.com", "otherpass")
 	if err == nil {
 		t.Error("expected duplicate service error, got nil")
 	}
@@ -218,11 +217,9 @@ func TestGetPasswordUsecase_Success(t *testing.T) {
 	crypto := &mockCrypto{}
 	uc := NewGetPasswordUsecase(vaultRepo, crypto, 30*time.Minute)
 
-	cfg := &config.Config{
-		User: config.UserConfig{Name: "testuser"},
-	}
+	sess := &session.Session{Username: "testuser"}
 
-	password, err := uc.Execute(cfg, "gmail")
+	password, err := uc.Execute(sess, "gmail")
 	if err != nil {
 		t.Fatalf("Execute failed: %v", err)
 	}
@@ -244,11 +241,9 @@ func TestGetPasswordUsecase_ServiceNotFound(t *testing.T) {
 	crypto := &mockCrypto{}
 	uc := NewGetPasswordUsecase(vaultRepo, crypto, 30*time.Minute)
 
-	cfg := &config.Config{
-		User: config.UserConfig{Name: "testuser"},
-	}
+	sess := &session.Session{Username: "testuser"}
 
-	_, err := uc.Execute(cfg, "nonexistent")
+	_, err := uc.Execute(sess, "nonexistent")
 	if err == nil {
 		t.Error("expected service not found error, got nil")
 	}
@@ -266,11 +261,9 @@ func TestGetPasswordUsecase_SessionExceeded(t *testing.T) {
 	crypto := &mockCrypto{}
 	uc := NewGetPasswordUsecase(vaultRepo, crypto, 30*time.Minute)
 
-	cfg := &config.Config{
-		User: config.UserConfig{Name: "testuser"},
-	}
+	sess := &session.Session{Username: "testuser"}
 
-	_, err := uc.Execute(cfg, "gmail")
+	_, err := uc.Execute(sess, "gmail")
 	if err == nil {
 		t.Error("expected session exceeded error, got nil")
 	}

@@ -12,7 +12,7 @@ import (
 
 func main() {
 	configPath := "config.json"
-	vaultRepo := repository.NewVaultRepository()
+	sessionPath := "session.json"
 
 	cfg, err := config.Load(configPath)
 	if err != nil {
@@ -24,7 +24,10 @@ func main() {
 		log.Fatal("invalid config key:", err)
 	}
 
-	app := app.New(configPath, vaultRepo, cryptoSvc)
+	vaultRepo := repository.NewVaultRepository()
+	sessionRepo := repository.NewSessionRepository(sessionPath)
+
+	app := app.New(configPath, cfg, vaultRepo, sessionRepo, cryptoSvc)
 
 	if err := app.Run(os.Args[1:]); err != nil {
 		log.Fatal(err)

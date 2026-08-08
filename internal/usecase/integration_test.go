@@ -10,12 +10,14 @@ import (
 	"github.com/kapralovs/passman/internal/crypto"
 	"github.com/kapralovs/passman/internal/entities"
 	"github.com/kapralovs/passman/internal/repository"
+	"github.com/kapralovs/passman/internal/session"
 	"github.com/kapralovs/passman/internal/usecase"
 )
 
 func TestFullFlow(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.json")
+	sessionPath := filepath.Join(dir, "session.json")
 
 	// Change to temp dir so files are created there
 	originalWd, _ := os.Getwd()
@@ -23,6 +25,7 @@ func TestFullFlow(t *testing.T) {
 	defer os.Chdir(originalWd)
 
 	vaultRepo := repository.NewVaultRepository()
+	sessionRepo := repository.NewSessionRepository(sessionPath)
 
 	// 1. Init
 	initUC := usecase.NewInitUsecase(configPath)
@@ -41,11 +44,10 @@ func TestFullFlow(t *testing.T) {
 		t.Fatalf("create crypto failed: %v", err)
 	}
 
-	sessionTTL := 30 * time.Minute
+	sessionTTL := cfg.SessionDuration * time.Minute
 
 	// 3. Add password (bypass signup/login which need terminal)
-	// First create a user in vault
-	cfg.User.Name = "testuser"
+	// First create a user in vault with current session
 	vaultRepo.Write("testuser", &entities.UserData{
 		Credentials: entities.Credentials{
 			Username:    "testuser",
@@ -53,18 +55,23 @@ func TestFullFlow(t *testing.T) {
 		},
 	})
 
+	sessionRepo.Save(&session.Session{Username: "testuser"})
+
 	addUC := usecase.NewAddPasswordUsecase(vaultRepo, cryptoSvc, sessionTTL)
-	_, userData, err := addUC.Execute(cfg, "gmail", "user@gmail.com", "super-secret-123")
+	sess, userData, err := addUC.Execute(&session.Session{Username: "testuser"}, "gmail", "user@gmail.com", "super-secret-123")
 	if err != nil {
 		t.Fatalf("add password failed: %v", err)
 	}
 	if err := vaultRepo.Write("testuser", userData); err != nil {
 		t.Fatalf("write vault failed: %v", err)
 	}
+	if err := sessionRepo.Save(sess); err != nil {
+		t.Fatalf("save session failed: %v", err)
+	}
 
 	// 4. Get password
 	getUC := usecase.NewGetPasswordUsecase(vaultRepo, cryptoSvc, sessionTTL)
-	password, err := getUC.Execute(cfg, "gmail")
+	password, err := getUC.Execute(&session.Session{Username: "testuser"}, "gmail")
 	if err != nil {
 		t.Fatalf("get password failed: %v", err)
 	}
@@ -74,29 +81,32 @@ func TestFullFlow(t *testing.T) {
 	}
 
 	// 5. Try to get non-existent service
-	_, err = getUC.Execute(cfg, "nonexistent")
+	_, err = getUC.Execute(&session.Session{Username: "testuser"}, "nonexistent")
 	if err == nil {
 		t.Error("expected error for non-existent service")
 	}
 
 	// 6. Add another password
-	_, userData, err = addUC.Execute(cfg, "github", "dev@github.com", "ghp_xxxx")
+	sess, userData, err = addUC.Execute(&session.Session{Username: "testuser"}, "github", "dev@github.com", "ghp_xxxx")
 	if err != nil {
 		t.Fatalf("add github password failed: %v", err)
 	}
 	if err := vaultRepo.Write("testuser", userData); err != nil {
 		t.Fatalf("write vault failed: %v", err)
 	}
+	if err := sessionRepo.Save(sess); err != nil {
+		t.Fatalf("save session failed: %v", err)
+	}
 
 	// 7. Verify both passwords exist
 	getUC2 := usecase.NewGetPasswordUsecase(vaultRepo, cryptoSvc, sessionTTL)
 
-	pass1, err := getUC2.Execute(cfg, "gmail")
+	pass1, err := getUC2.Execute(&session.Session{Username: "testuser"}, "gmail")
 	if err != nil || pass1 != "super-secret-123" {
 		t.Errorf("gmail password mismatch: got %q, want %q", pass1, "super-secret-123")
 	}
 
-	pass2, err := getUC2.Execute(cfg, "github")
+	pass2, err := getUC2.Execute(&session.Session{Username: "testuser"}, "github")
 	if err != nil || pass2 != "ghp_xxxx" {
 		t.Errorf("github password mismatch: got %q, want %q", pass2, "ghp_xxxx")
 	}
@@ -130,13 +140,13 @@ func TestFullFlow_SessionExpiry(t *testing.T) {
 	})
 
 	addUC := usecase.NewAddPasswordUsecase(vaultRepo, cryptoSvc, 30*time.Minute)
-	_, _, err := addUC.Execute(cfg, "gmail", "user@gmail.com", "pass")
+	_, _, err := addUC.Execute(&session.Session{Username: "testuser"}, "gmail", "user@gmail.com", "pass")
 	if err == nil {
 		t.Error("expected session exceeded error")
 	}
 
 	getUC := usecase.NewGetPasswordUsecase(vaultRepo, cryptoSvc, 30*time.Minute)
-	_, err = getUC.Execute(cfg, "gmail")
+	_, err = getUC.Execute(&session.Session{Username: "testuser"}, "gmail")
 	if err == nil {
 		t.Error("expected session exceeded error")
 	}

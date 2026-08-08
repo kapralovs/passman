@@ -5,14 +5,14 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/kapralovs/passman/internal/config"
 	"github.com/kapralovs/passman/internal/repository"
 	"github.com/kapralovs/passman/internal/usecase"
 )
 
 // Controller обрабатывает команды CLI и вызывает соответствующие use cases.
 type Controller struct {
-	ConfigPath   string
+	ConfigPath     string
+	SessionRepo    repository.SessionRepository
 	InitUsecase    *usecase.InitUsecase
 	SignUpUsecase  *usecase.SignUpUsecase
 	LoginUsecase   *usecase.LoginUsecase
@@ -20,9 +20,10 @@ type Controller struct {
 	GetUsecase     *usecase.GetPasswordUsecase
 }
 
-// NewController создаёт контроллер с внедрёнными use cases.
+// NewController создаёт контроллер с инициализированными use cases.
 func NewController(
 	configPath string,
+	sessionRepo repository.SessionRepository,
 	init *usecase.InitUsecase,
 	signUp *usecase.SignUpUsecase,
 	login *usecase.LoginUsecase,
@@ -31,6 +32,7 @@ func NewController(
 ) *Controller {
 	return &Controller{
 		ConfigPath:    configPath,
+		SessionRepo:   sessionRepo,
 		InitUsecase:   init,
 		SignUpUsecase: signUp,
 		LoginUsecase:  login,
@@ -67,31 +69,21 @@ func (c *Controller) handleSignUp(args []string) error {
 		return errors.New("--username is required for signup")
 	}
 
-	cfg, err := config.Load(c.ConfigPath)
-	if err != nil {
-		return err
-	}
-
-	cfg, err = c.SignUpUsecase.Execute(cfg, username)
-	if err != nil {
-		return err
-	}
-
-	return config.Save(c.ConfigPath, cfg)
+	return c.SignUpUsecase.Execute(username)
 }
 
 func (c *Controller) handleLogin(args []string) error {
-	cfg, err := config.Load(c.ConfigPath)
+	sess, err := c.SessionRepo.Load()
 	if err != nil {
 		return err
 	}
 
-	cfg, err = c.LoginUsecase.Execute(cfg)
+	_, err = c.LoginUsecase.Execute(sess)
 	if err != nil {
 		return err
 	}
 
-	return config.Save(c.ConfigPath, cfg)
+	return c.SessionRepo.Save(sess)
 }
 
 func (c *Controller) handleAdd(args []string) error {
@@ -103,22 +95,22 @@ func (c *Controller) handleAdd(args []string) error {
 		return errors.New("--service, --login, and --password are required for add")
 	}
 
-	cfg, err := config.Load(c.ConfigPath)
+	sess, err := c.SessionRepo.Load()
 	if err != nil {
 		return err
 	}
 
-	cfg, userData, err := c.AddUsecase.Execute(cfg, service, login, password)
+	_, userData, err := c.AddUsecase.Execute(sess, service, login, password)
 	if err != nil {
 		return err
 	}
 
 	vaultRepo := repository.NewVaultRepository()
-	if err := vaultRepo.Write(cfg.User.Name, userData); err != nil {
+	if err := vaultRepo.Write(sess.Username, userData); err != nil {
 		return err
 	}
 
-	return config.Save(c.ConfigPath, cfg)
+	return c.SessionRepo.Save(sess)
 }
 
 func (c *Controller) handleGet(args []string) error {
@@ -127,12 +119,12 @@ func (c *Controller) handleGet(args []string) error {
 		return errors.New("--service is required for get")
 	}
 
-	cfg, err := config.Load(c.ConfigPath)
+	sess, err := c.SessionRepo.Load()
 	if err != nil {
 		return err
 	}
 
-	password, err := c.GetUsecase.Execute(cfg, service)
+	password, err := c.GetUsecase.Execute(sess, service)
 	if err != nil {
 		return err
 	}
