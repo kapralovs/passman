@@ -11,7 +11,7 @@
 - **Зависимости**: `golang.org/x/term` (для безопасного ввода паролей в терминале)
 - **Шифрование**: AES-256-CBC с PKCS7, случайный IV для каждой записи
 - **Хэширование**: SHA-256 для мастер-пароля
-- **Хранение данных**: локальные JSON-файлы (`config.json`, `<username>_vault.json`)
+- **Хранение данных**: локальные JSON-файлы (`config.json`, `session.json`, `<username>_vault.json`)
 
 ### Архитектура: чистая архитектура (Clean Architecture)
 
@@ -26,6 +26,7 @@ internal/controllers/        ← Адаптеры (CLI → use cases)
        │
 internal/usecase/            ← Слой бизнес-логики (интерфейсы + кейсы)
        │
+internal/session/            ← Сущность сессии (Session)
 internal/repository/         ← Реализация хранения (файлы)
 internal/crypto/             ← Реализация шифрования
        │
@@ -36,24 +37,25 @@ internal/entities/           ← Чистые сущности (без зави�
 
 | Пакет | Назначение |
 |-------|-----------|
-| `cmd/passman` | Точка входа: инициализация конфига, DI, запуск |
+| `cmd/passman` | Точка входа: инициализация DI, запуск |
 | `internal/entities` | Чистые структуры данных (`Config`, `UserData`, `PasswordEntry`) |
+| `internal/session` | Сущность сессии (`Session`) и её сериализация |
 | `internal/app` | Оркестрация: `App` с полями-зависимостями, метод `Run()` |
 | `internal/controllers` | Обработка CLI-аргументов, вызов use cases |
 | `internal/usecase` | Интерфейсы (`CryptoUsecase`) и бизнес-кейсы (`Init`, `SignUp`, `Login`, `Add`, `Get`) |
-| `internal/repository` | Интерфейсы (`ConfigRepository`, `VaultRepository`) и файловые реализации |
+| `internal/repository` | Интерфейсы (`VaultRepository`, `SessionRepository`) и файловые реализации |
 | `internal/crypto` | Реализация AES-256-CBC шифрования/дешифрования |
 
 #### Зависимости между слоями
 
 ```
-entities (нет зависимостей)
+entities, session (нет зависимостей)
     ↑
-repository, crypto (зависят только от entities)
+repository, crypto (зависят только от entities, session)
     ↑
 usecase (зависит от repository, crypto интерфейсов)
     ↑
-controllers (зависит от usecase)
+controllers (зависит от usecase, repository)
     ↑
 app (зависит от всего)
     ↑
@@ -61,6 +63,11 @@ cmd/passman (зависит от всего, точка входа)
 ```
 
 **Правило:** внешние слои зависят от внутренних через интерфейсы. Бизнес-логика не знает о CLI, файлах или криптографии — только об интерфейсах.
+
+**Разделение данных:**
+- `config.json` — статичная конфигурация (ключ шифрования, длительность сессии). Загружается один раз при старте.
+- `session.json` — динамическое состояние (username, last_login_at, trusted). Обновляется при login/add.
+- `<username>_vault.json` — зашифрованные пароли пользователя.
 
 ---
 
@@ -91,10 +98,7 @@ go build -o passman ./cmd/passman
 
 ### Тестирование
 
-Явных тестовых файлов в проекте на данный момент нет. TODO: добавить тесты.
-
 ```bash
-# Запуск тестов (после добавления)
 go test ./...
 ```
 
@@ -114,6 +118,7 @@ go test ./...
 Каждый слой имеет чёткую ответственность:
 
 - **entities** — только структуры данных, без методов
+- **session** — сущность сессии и её сериализация (Load/Save)
 - **repository** — только CRUD-операции, без бизнес-логики
 - **usecase** — только бизнес-правила, без CLI и файловой системы
 - **controllers** — только парсинг аргументов и вызовы use cases
@@ -125,7 +130,7 @@ go test ./...
 - Секретный ключ AES генерируется криптографически стойким генератором (`crypto/rand`)
 - Мастер-пароль хэшируется, а не хранится в plaintext
 - **TODO**: SHA-256 без соли уязвим к rainbow-table атакам. Рекомендуется использовать `bcrypt` или `scrypt`
-- **TODO**: Файлы хранятся без ограничений прав доступа. Рекомендуется `os.WriteFile(..., 0600)`
+- Файлы хранятся с ограничениями прав доступа (`0600`)
 
 ### Зависимости
 
