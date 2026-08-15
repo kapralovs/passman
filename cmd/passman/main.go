@@ -7,7 +7,6 @@ import (
 	"github.com/kapralovs/passman/internal/app"
 	"github.com/kapralovs/passman/internal/config"
 	"github.com/kapralovs/passman/internal/crypto"
-	"github.com/kapralovs/passman/internal/repository"
 )
 
 func main() {
@@ -24,10 +23,7 @@ func main() {
 		log.Fatal("invalid config key:", err)
 	}
 
-	vaultRepo := repository.NewVaultRepository()
-	sessionRepo := repository.NewSessionRepository(sessionPath)
-
-	app := app.New(configPath, cfg, vaultRepo, sessionRepo, cryptoSvc)
+	app := app.New(configPath, cfg, sessionPath, cryptoSvc)
 
 	if err := app.Run(os.Args[1:]); err != nil {
 		log.Fatal(err)

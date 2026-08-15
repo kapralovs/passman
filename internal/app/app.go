@@ -16,12 +16,13 @@ type App struct {
 func New(
 	configPath string,
 	cfg *config.Config,
-	vaultRepo repository.VaultRepository,
-	sessionRepo repository.SessionRepository,
+	sessionPath string,
 	cryptoSvc usecase.CryptoUsecase,
 ) *App {
 	sessionTTL := cfg.SessionDuration
 
+	vaultRepo := repository.NewVaultRepository()
+	sessionRepo := repository.NewSessionRepository(sessionPath)
 	initUC := usecase.NewInitUsecase(configPath)
 	signUpUC := usecase.NewSignUpUsecase(vaultRepo, sessionRepo)
 	loginUC := usecase.NewLoginUsecase(vaultRepo, sessionRepo)
