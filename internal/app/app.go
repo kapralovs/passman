@@ -36,9 +36,19 @@ func New(
 	}
 
 	addUC := usecase.NewAddPasswordUsecase(vaultRepo, cryptoSvc, sessionTTL)
+	updateUC := usecase.NewUpdateServicePasswordUsecase(vaultRepo, cryptoSvc, sessionTTL)
 	getUC := usecase.NewGetPasswordUsecase(vaultRepo, cryptoSvc, sessionTTL)
 
-	controller := controllers.NewController(configPath, sessionRepo, initUC, signUpUC, loginUC, addUC, getUC)
+	useCases := controllers.UseCases{
+		Init:     initUC,
+		SignUp:   signUpUC,
+		Login:    loginUC,
+		Add:      addUC,
+		Update:   updateUC,
+		Get:      getUC,
+	}
+
+	controller := controllers.NewController(configPath, sessionRepo, useCases)
 
 	a := &App{
 		Controller: controller,
