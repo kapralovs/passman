@@ -106,6 +106,54 @@ func (u *AddPasswordUsecase) Execute(sess *session.Session, service, login, pass
 	return sess, userData, nil
 }
 
+// UpdateServicePasswordUsecase отвечает за обновление пароля сервиса.
+type UpdateServicePasswordUsecase struct {
+	VaultRepo  repository.VaultRepository
+	Crypto     CryptoUsecase
+	SessionTTL time.Duration
+}
+
+// NewUpdateServicePasswordUsecase создаёт новый use case обновления пароля.
+func NewUpdateServicePasswordUsecase(vaultRepo repository.VaultRepository, crypto CryptoUsecase, sessionTTL time.Duration) *UpdateServicePasswordUsecase {
+	return &UpdateServicePasswordUsecase{
+		VaultRepo:  vaultRepo,
+		Crypto:     crypto,
+		SessionTTL: sessionTTL,
+	}
+}
+
+// Execute обновляет запись пароля по названию сервиса.
+func (u *UpdateServicePasswordUsecase) Execute(sess *session.Session, service, login, password string) (*entities.UserData, error) {
+	userData, err := u.VaultRepo.Read(sess.Username)
+	if err != nil {
+		return nil, err
+	}
+
+	if time.Since(userData.Credentials.LastLoginAt) > u.SessionTTL {
+		return nil, errors.New("session exceeded")
+	}
+
+	encrypted, err := u.Crypto.Encrypt([]byte(password))
+	if err != nil {
+		return nil, err
+	}
+
+	for i, p := range userData.Passwords {
+		if service == p.Service {
+			userData.Passwords[i] = entities.PasswordEntry{
+				Service:     service,
+				Login:       login,
+				Password:    hex.EncodeToString(encrypted),
+				URL:         p.URL,
+				Description: p.Description,
+			}
+			return userData, nil
+		}
+	}
+
+	return nil, fmt.Errorf("service %q not found", service)
+}
+
 // GetPasswordUsecase отвечает за получение пароля.
 type GetPasswordUsecase struct {
 	VaultRepo  repository.VaultRepository
