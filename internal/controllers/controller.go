@@ -11,13 +11,13 @@ import (
 
 // Controller обрабатывает команды CLI и вызывает соответствующие use cases.
 type Controller struct {
-	ConfigPath     string
-	SessionRepo    repository.SessionRepository
-	InitUsecase    *usecase.InitUsecase
-	SignUpUsecase  *usecase.SignUpUsecase
-	LoginUsecase   *usecase.LoginUsecase
-	AddUsecase     *usecase.AddPasswordUsecase
-	GetUsecase     *usecase.GetPasswordUsecase
+	ConfigPath    string
+	SessionRepo   repository.SessionRepository
+	InitUsecase   *usecase.InitUsecase
+	SignUpUsecase *usecase.SignUpUsecase
+	LoginUsecase  *usecase.LoginUsecase
+	AddUsecase    *usecase.AddPasswordUsecase
+	GetUsecase    *usecase.GetPasswordUsecase
 }
 
 // NewController создаёт контроллер с инициализированными use cases.
@@ -78,8 +78,7 @@ func (c *Controller) handleLogin(args []string) error {
 		return err
 	}
 
-	_, err = c.LoginUsecase.Execute(sess)
-	if err != nil {
+	if _, err = c.LoginUsecase.Execute(sess); err != nil {
 		return err
 	}
 
@@ -106,7 +105,7 @@ func (c *Controller) handleAdd(args []string) error {
 	}
 
 	vaultRepo := repository.NewVaultRepository()
-	if err := vaultRepo.Write(sess.Username, userData); err != nil {
+	if err = vaultRepo.Write(sess.Username, userData); err != nil {
 		return err
 	}
 
@@ -139,5 +138,6 @@ func extractFlagValue(args []string, flag string) string {
 			return arg[len(flag)+1:]
 		}
 	}
+
 	return ""
 }
