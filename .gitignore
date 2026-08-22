@@ -1,0 +1,9 @@
+# Binaries
+passman
+
+# Generated vault files
+*_vault.json
+
+# Config and session files
+config.json
+session.json

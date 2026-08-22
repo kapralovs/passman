@@ -18,12 +18,6 @@ func NewVaultRepository() VaultRepository {
 
 func (r *fileVaultRepository) Read(username string) (*entities.UserData, error) {
 	filename := fmt.Sprintf("%s_vault.json", username)
-	file, err := os.Open(filename)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
 	content, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err
