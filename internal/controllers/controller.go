@@ -5,30 +5,56 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/kapralovs/passman/internal/entities"
 	"github.com/kapralovs/passman/internal/repository"
-	"github.com/kapralovs/passman/internal/usecase"
+	"github.com/kapralovs/passman/internal/session"
 )
+
+// InitUsecase — интерфейс для инициализации.
+type InitUsecase interface {
+	Execute() error
+}
+
+// SignUpUsecase — интерфейс для регистрации.
+type SignUpUsecase interface {
+	Execute(username string) error
+}
+
+// LoginUsecase — интерфейс для входа.
+type LoginUsecase interface {
+	Execute(sess *session.Session) (*session.Session, error)
+}
+
+// AddPasswordUsecase — интерфейс для добавления пароля.
+type AddPasswordUsecase interface {
+	Execute(sess *session.Session, service, login, password string) (*session.Session, *entities.UserData, error)
+}
+
+// GetPasswordUsecase — интерфейс для получения пароля.
+type GetPasswordUsecase interface {
+	Execute(sess *session.Session, service string) (string, error)
+}
 
 // Controller обрабатывает команды CLI и вызывает соответствующие use cases.
 type Controller struct {
 	ConfigPath    string
 	SessionRepo   repository.SessionRepository
-	InitUsecase   *usecase.InitUsecase
-	SignUpUsecase *usecase.SignUpUsecase
-	LoginUsecase  *usecase.LoginUsecase
-	AddUsecase    *usecase.AddPasswordUsecase
-	GetUsecase    *usecase.GetPasswordUsecase
+	InitUsecase   InitUsecase
+	SignUpUsecase SignUpUsecase
+	LoginUsecase  LoginUsecase
+	AddUsecase    AddPasswordUsecase
+	GetUsecase    GetPasswordUsecase
 }
 
 // NewController создаёт контроллер с инициализированными use cases.
 func NewController(
 	configPath string,
 	sessionRepo repository.SessionRepository,
-	init *usecase.InitUsecase,
-	signUp *usecase.SignUpUsecase,
-	login *usecase.LoginUsecase,
-	add *usecase.AddPasswordUsecase,
-	get *usecase.GetPasswordUsecase,
+	init InitUsecase,
+	signUp SignUpUsecase,
+	login LoginUsecase,
+	add AddPasswordUsecase,
+	get GetPasswordUsecase,
 ) *Controller {
 	return &Controller{
 		ConfigPath:    configPath,

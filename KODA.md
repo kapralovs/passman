@@ -26,7 +26,8 @@ internal/controllers/        ← Адаптеры (CLI → use cases)
        │
 internal/usecase/            ← Слой бизнес-логики (интерфейсы + кейсы)
        │
-internal/session/            ← Сущность сессии (Session)
+internal/config/             ← Загрузка/сохранение конфигурации
+internal/session/            ← Сущность сессии и её сериализация
 internal/repository/         ← Реализация хранения (файлы)
 internal/crypto/             ← Реализация шифрования
        │
@@ -38,18 +39,19 @@ internal/entities/           ← Чистые сущности (без зави�
 | Пакет | Назначение |
 |-------|-----------|
 | `cmd/passman` | Точка входа: инициализация DI, запуск |
-| `internal/entities` | Чистые структуры данных (`Config`, `UserData`, `PasswordEntry`) |
-| `internal/session` | Сущность сессии (`Session`) и её сериализация |
+| `internal/entities` | Чистые структуры данных (`Config`, `UserData`, `Credentials`, `PasswordEntry`) |
+| `internal/config` | Загрузка и сохранение конфигурации (`Load`, `Save`) |
+| `internal/session` | Сущность сессии (`Session`) и её сериализация (Load/Save) |
 | `internal/app` | Оркестрация: `App` с полями-зависимостями, метод `Run()` |
-| `internal/controllers` | Обработка CLI-аргументов, вызов use cases |
-| `internal/usecase` | Интерфейсы (`CryptoUsecase`) и бизнес-кейсы (`Init`, `SignUp`, `Login`, `Add`, `Get`) |
+| `internal/controllers` | Обработка CLI-аргументов, вызов use cases, интерфейсы use cases |
+| `internal/usecase` | Бизнес-кейсы (`Init`, `SignUp`, `Login`, `Add`, `Get`) |
 | `internal/repository` | Интерфейсы (`VaultRepository`, `SessionRepository`) и файловые реализации |
 | `internal/crypto` | Реализация AES-256-CBC шифрования/дешифрования |
 
 #### Зависимости между слоями
 
 ```
-entities, session (нет зависимостей)
+entities, session, config (нет зависимостей)
     ↑
 repository, crypto (зависят только от entities, session)
     ↑
@@ -118,10 +120,11 @@ go test ./...
 Каждый слой имеет чёткую ответственность:
 
 - **entities** — только структуры данных, без методов
+- **config** — загрузка и сохранение конфигурации (`Load`, `Save`)
 - **session** — сущность сессии и её сериализация (Load/Save)
 - **repository** — только CRUD-операции, без бизнес-логики
 - **usecase** — только бизнес-правила, без CLI и файловой системы
-- **controllers** — только парсинг аргументов и вызовы use cases
+- **controllers** — парсинг аргументов, вызовы use cases, определение интерфейсов use cases
 - **crypto** — только шифрование/дешифрование
 
 ### Безопасность
